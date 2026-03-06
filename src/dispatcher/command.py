@@ -33,7 +33,13 @@ class CommandDispatcher:
 
         # 1. 全局样式
         if intent.global_styles is not None:
-            logger.info("执行 set_global_styles: 字体=%s, 字号=%s", intent.global_styles.name, intent.global_styles.size_pt)
+            gs = intent.global_styles
+            font_desc = (
+                f"西文={gs.name_ascii or gs.name}, 中文={gs.name_east_asia or gs.name}"
+                if (gs.name_ascii or gs.name_east_asia)
+                else f"字体={gs.name}"
+            )
+            logger.info("执行 set_global_styles: %s, 字号=%s", font_desc, gs.size_pt)
             word_processor.set_global_styles(
                 font_config=intent.global_styles,
                 target_scope=target_scope,

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 from docx.shared import Pt
 
 from ..schemas.typesetting import FontConfig, ParagraphConfig
@@ -141,15 +142,25 @@ class WordProcessor:
             font_config: 字体配置
             target_scope: 作用范围，"body"=正文段落，"heading"=标题，"all"=全文
         """
-        # 解析字体名（智能映射）
-        font_name = font_config.name
-        if font_name and font_name in FONT_NAME_MAP:
-            font_name = FONT_NAME_MAP[font_name]
+        # 解析字体名（智能映射）：中西文可分别指定
+        def _resolve_font(raw: Optional[str]) -> Optional[str]:
+            if not raw:
+                return None
+            return FONT_NAME_MAP.get(raw, raw)
+
+        font_ascii = _resolve_font(font_config.name_ascii or font_config.name)
+        font_east_asia = _resolve_font(font_config.name_east_asia or font_config.name)
 
         # 解析颜色
         rgb_color = _parse_color(font_config.color)
 
-        logger.info("set_global_styles: 字体=%s, 字号=%spt, 范围=%s", font_name, font_config.size_pt, target_scope)
+        logger.info(
+            "set_global_styles: 西文=%s, 中文=%s, 字号=%spt, 范围=%s",
+            font_ascii,
+            font_east_asia,
+            font_config.size_pt,
+            target_scope,
+        )
         affected = 0
         for para in self._doc.paragraphs:
             # 根据 target_scope 过滤
@@ -161,8 +172,22 @@ class WordProcessor:
                     continue
 
             for run in para.runs:
-                if font_name:
-                    run.font.name = font_name
+                # 西文：w:ascii / w:hAnsi（run.font.name 会创建 rPr/rFonts）
+                if font_ascii:
+                    run.font.name = font_ascii
+                # 中文：w:eastAsia（需单独设置，否则 CJK 不生效）
+                if font_east_asia:
+                    try:
+                        rPr = run._element.get_or_add_rPr()
+                        if rPr.rFonts is not None:
+                            rPr.rFonts.set(qn("w:eastAsia"), font_east_asia)
+                        else:
+                            run.font.name = font_east_asia
+                            rPr = run._element.get_or_add_rPr()
+                            if rPr.rFonts is not None:
+                                rPr.rFonts.set(qn("w:eastAsia"), font_east_asia)
+                    except Exception:
+                        run.font.name = font_east_asia
                 if font_config.size_pt is not None:
                     run.font.size = Pt(font_config.size_pt)
                 if rgb_color:

@@ -12,7 +12,18 @@ from pydantic import BaseModel, Field
 class FontConfig(BaseModel):
     """字体配置"""
 
-    name: Optional[str] = Field(None, description="字体名称，如：仿宋、宋体、黑体")
+    name: Optional[str] = Field(
+        None,
+        description="主字体，未指定 name_east_asia/name_ascii 时同时用于中西文",
+    )
+    name_east_asia: Optional[str] = Field(
+        None,
+        description="中文/东亚字体，如：仿宋、宋体、黑体。与 name_ascii 配合实现中西文分设",
+    )
+    name_ascii: Optional[str] = Field(
+        None,
+        description="西文字体，如：Times New Roman、Arial。与 name_east_asia 配合实现中西文分设",
+    )
     size_pt: Optional[float] = Field(None, description="字号（磅），小四号≈12pt")
     color: Optional[str] = Field(None, description="颜色，支持 hex 如 #000000 或颜色名称")
 

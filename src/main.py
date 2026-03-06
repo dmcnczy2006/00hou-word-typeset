@@ -77,7 +77,7 @@ def process_document(
     return save_path
 
 
-def create_sample_document(path: str = "sample.docx") -> str:
+def create_sample_document(path: str = "sample_00houTypeset.docx") -> str:
     """
     创建示例文档（用于测试）
 
@@ -124,5 +124,5 @@ if __name__ == "__main__":
         create_sample_document(doc_path)
         print(f"已创建示例文档: {doc_path}")
 
-    result = process_document(doc_path, prompt, preset="official")
+    result = process_document(doc_path, prompt, preset="official", output_path='sample_00houTypeset.docx')
     print(f"处理完成，已保存至: {result}")

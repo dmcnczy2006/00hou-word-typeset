@@ -31,9 +31,14 @@ class Config:
             },
             "target_scope": "body",
         },
-        # 论文标准（常见学术论文格式）
+        # 论文标准（常见学术论文格式，中西文分设）
         "thesis": {
-            "font": {"name": "宋体", "size_pt": 12.0, "color": None},
+            "font": {
+                "name_east_asia": "宋体",
+                "name_ascii": "Times New Roman",
+                "size_pt": 12.0,
+                "color": None,
+            },
             "paragraph": {
                 "first_line_indent": 24.0,
                 "line_spacing": 1.5,
