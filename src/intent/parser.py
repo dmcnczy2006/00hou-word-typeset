@@ -1,0 +1,214 @@
+"""
+意图解析器
+
+接收用户自然语言指令，调用 LLM 输出结构化 TypesettingIntent JSON。
+"""
+
+import json
+import logging
+import re
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+from pydantic import ValidationError
+
+from ..schemas.typesetting import TypesettingIntent
+from ..config.presets import Config
+
+# 智能样式映射：中文字号/字体描述 → 标准参数
+FONT_SIZE_MAP = {
+    "初号": 42,
+    "小初": 36,
+    "一号": 26,
+    "小一": 24,
+    "二号": 22,
+    "小二": 18,
+    "三号": 16,
+    "小三": 15,
+    "四号": 14,
+    "小四": 12,
+    "五号": 10.5,
+    "小五": 9,
+    "六号": 7.5,
+    "小六": 6.5,
+    "七号": 5.5,
+    "八号": 5,
+}
+
+# 首行缩进：字符数 → 磅（1 字符 ≈ 12pt 五号字宽）
+def _chars_to_pt(chars: float) -> float:
+    return chars * 12.0
+
+
+# 意图解析的 prompt 模板
+INTENT_PROMPT_TEMPLATE = """你是一个 Word 文档排版助手。请根据用户的自然语言指令，输出结构化的 JSON 配置。
+
+## 用户指令
+{user_prompt}
+
+## 输出要求
+请严格按照以下 JSON Schema 输出，只返回 JSON 对象，不要包含 markdown 代码块或其它说明文字。
+
+### 字号映射参考
+- 小四号 = 12pt
+- 四号 = 14pt
+- 五号 = 10.5pt
+- 三号 = 16pt
+- 首行缩进 2 字符 ≈ 24pt（first_line_indent: 24）
+
+### 常见字体
+仿宋、宋体、黑体、楷体、微软雅黑
+
+### 对齐方式
+left（左对齐）、center（居中）、right（右对齐）、justify（两端对齐）
+
+### 作用范围
+body（仅正文）、heading（仅标题）、all（全文）
+
+## JSON Schema
+{schema_json}
+
+请直接输出 JSON："""
+
+
+class _DefaultMockConnector:
+    """当 llm 包不可用时的默认 Mock 连接器"""
+
+    def complete(self, prompt: str, schema_hint: Optional[str] = None) -> str:
+        return '{"global_styles": null, "paragraph_config": null, "replacements": [], "target_scope": "body"}'
+
+
+class IntentParser:
+    """
+    意图解析器
+
+    将用户自然语言指令解析为 TypesettingIntent 结构化配置。
+    """
+
+    def __init__(self, llm_connector=None):
+        """
+        初始化意图解析器
+
+        Args:
+            llm_connector: LLM 连接器实例，若为 None 则使用 OpenAIConnector（从环境变量读取 API Key）
+        """
+        if llm_connector is None:
+            try:
+                from llm.connector import OpenAIConnector
+                self._llm = OpenAIConnector()
+            except (ImportError, Exception) as e:
+                # API Key 未配置或 openai 未安装时回退到 Mock
+                logger.warning("使用 Mock 连接器（OpenAI 不可用: %s）", e)
+                try:
+                    from llm.connector import MockLLMConnector
+                    self._llm = MockLLMConnector(
+                        '{"global_styles": null, "paragraph_config": null, "replacements": [], "target_scope": "body"}'
+                    )
+                except ImportError:
+                    self._llm = _DefaultMockConnector()
+        else:
+            self._llm = llm_connector
+
+    def parse(
+        self,
+        user_prompt: str,
+        preset: Optional[str] = None,
+        merge_with_preset: bool = True,
+    ) -> TypesettingIntent:
+        """
+        解析用户指令为 TypesettingIntent
+
+        Args:
+            user_prompt: 用户自然语言指令
+            preset: 预设名称，如 "official"、"thesis"
+            merge_with_preset: 是否与预设合并（用户指令覆盖预设）
+
+        Returns:
+            TypesettingIntent 实例
+        """
+        # 1. 获取基础配置（预设或空）
+        base_intent = Config.preset_to_intent(preset) if preset else None
+        if base_intent is None:
+            base_intent = TypesettingIntent()
+
+        # 2. 若用户指令为空，直接返回预设
+        if not user_prompt or not user_prompt.strip():
+            logger.info("用户指令为空，使用预设配置: %s", preset)
+            return base_intent
+
+        # 3. 调用 LLM 解析用户指令
+        logger.info("调用 LLM 解析用户指令")
+        schema_json = json.dumps(
+            TypesettingIntent.model_json_schema(),
+            ensure_ascii=False,
+            indent=2,
+        )
+        prompt = INTENT_PROMPT_TEMPLATE.format(
+            user_prompt=user_prompt.strip(),
+            schema_json=schema_json,
+        )
+
+        try:
+            response = self._llm.complete(prompt, schema_hint=schema_json)
+            logger.debug("LLM 响应长度: %d 字符", len(response))
+        except Exception as e:
+            # LLM 调用失败时回退到预设
+            logger.warning("LLM 调用失败，回退到预设: %s", e)
+            return base_intent
+
+        # 4. 解析 JSON 并校验
+        parsed = self._extract_and_validate_json(response)
+        if parsed is None:
+            logger.warning("LLM 响应解析失败，回退到预设")
+            return base_intent
+
+        # 5. 合并：用户指令覆盖预设
+        if merge_with_preset:
+            merged = self._merge_intents(base_intent, parsed)
+            logger.info("已合并预设与 LLM 解析结果")
+            return merged
+        return parsed
+
+    def _extract_and_validate_json(self, response: str) -> Optional[TypesettingIntent]:
+        """
+        从 LLM 响应中提取 JSON 并校验为 TypesettingIntent
+
+        支持从 markdown 代码块中提取。
+        """
+        text = response.strip()
+        # 移除可能的 markdown 代码块
+        if "```json" in text:
+            match = re.search(r"```json\s*([\s\S]*?)\s*```", text)
+            if match:
+                text = match.group(1).strip()
+        elif "```" in text:
+            match = re.search(r"```\s*([\s\S]*?)\s*```", text)
+            if match:
+                text = match.group(1).strip()
+
+        try:
+            data = json.loads(text)
+            return TypesettingIntent.model_validate(data)
+        except (json.JSONDecodeError, ValidationError):
+            return None
+
+    def _merge_intents(
+        self,
+        base: TypesettingIntent,
+        override: TypesettingIntent,
+    ) -> TypesettingIntent:
+        """
+        合并两个意图：override 中非空字段覆盖 base
+        """
+        global_styles = override.global_styles or base.global_styles
+        paragraph_config = override.paragraph_config or base.paragraph_config
+        replacements = override.replacements if override.replacements else base.replacements
+        target_scope = override.target_scope or base.target_scope
+
+        return TypesettingIntent(
+            global_styles=global_styles,
+            paragraph_config=paragraph_config,
+            replacements=replacements,
+            target_scope=target_scope,
+        )
