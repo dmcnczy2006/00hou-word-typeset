@@ -140,7 +140,7 @@ class WordProcessor:
 
         Args:
             font_config: 字体配置
-            target_scope: 作用范围，"body"=正文段落，"heading"=标题，"all"=全文
+            target_scope: 作用范围。支持：body、heading、heading_1~heading_9、caption、all
         """
         # 解析字体名（智能映射）：中西文可分别指定
         def _resolve_font(raw: Optional[str]) -> Optional[str]:
@@ -163,13 +163,8 @@ class WordProcessor:
         )
         affected = 0
         for para in self._doc.paragraphs:
-            # 根据 target_scope 过滤
-            if target_scope == "heading":
-                if not self._is_heading(para):
-                    continue
-            elif target_scope == "body":
-                if self._is_heading(para):
-                    continue
+            if not self._match_scope(para, target_scope):
+                continue
 
             for run in para.runs:
                 # 西文：w:ascii / w:hAnsi（run.font.name 会创建 rPr/rFonts）
@@ -263,9 +258,7 @@ class WordProcessor:
         logger.info("paragraph_shaping: 范围=%s, 首行缩进=%s, 行距=%s", target_scope, paragraph_config.first_line_indent, paragraph_config.line_spacing)
         affected = 0
         for para in self._doc.paragraphs:
-            if target_scope == "heading" and not self._is_heading(para):
-                continue
-            if target_scope == "body" and self._is_heading(para):
+            if not self._match_scope(para, target_scope):
                 continue
 
             pf = para.paragraph_format
@@ -295,21 +288,64 @@ class WordProcessor:
 
         Args:
             indent_pt: 缩进量（磅），2 字符 ≈ 24pt
-            target_scope: 作用范围
+            target_scope: 作用范围（body、heading、heading_1~9、caption、all）
         """
         for para in self._doc.paragraphs:
-            if target_scope == "heading" and not self._is_heading(para):
-                continue
-            if target_scope == "body" and self._is_heading(para):
+            if not self._match_scope(para, target_scope):
                 continue
             para.paragraph_format.first_line_indent = Pt(indent_pt)
 
     def _is_heading(self, paragraph) -> bool:
         """判断段落是否为标题样式"""
+        return self._get_heading_level(paragraph) is not None
+
+    def _get_heading_level(self, paragraph) -> Optional[int]:
+        """
+        获取段落的标题级别（1-9），非标题返回 None
+        """
+        if paragraph.style is None:
+            return None
+        style_name = getattr(paragraph.style, "name", "") or ""
+        if "heading" not in style_name.lower() and "标题" not in style_name:
+            return None
+        # 匹配 Heading 1, 标题 1, Heading1 等
+        m = re.search(r"(?:heading|标题)\s*(\d)", style_name, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+        return 1  # 未明确级别时默认 1
+
+    def _is_caption(self, paragraph) -> bool:
+        """判断段落是否为题注样式"""
         if paragraph.style is None:
             return False
         style_name = getattr(paragraph.style, "name", "") or ""
-        return "heading" in style_name.lower() or "标题" in style_name
+        name_lower = style_name.lower()
+        return "caption" in name_lower or "题注" in style_name
+
+    def _match_scope(self, paragraph, target_scope: str) -> bool:
+        """
+        判断段落是否匹配目标作用范围
+
+        支持：body、heading、heading_1~heading_9、caption、all
+        """
+        if target_scope == "all":
+            return True
+        if target_scope == "body":
+            return not self._is_heading(paragraph) and not self._is_caption(paragraph)
+        if target_scope == "heading":
+            return self._is_heading(paragraph)
+        if target_scope.startswith("heading_"):
+            try:
+                level = int(target_scope.split("_")[1])
+                return self._get_heading_level(paragraph) == level
+            except (ValueError, IndexError):
+                return False
+        if target_scope == "caption":
+            return self._is_caption(paragraph)
+        if target_scope == "emphasis":
+            # emphasis 为 run 级，段落级视为不匹配（由后续扩展处理）
+            return False
+        return True
 
     @property
     def document(self) -> Document:

@@ -1,0 +1,322 @@
+{
+  "version": "1.0",
+  "description": "智能 Word 排版 Agent 排版规则配置",
+  "font_size_reference": {
+    "初号": 42,
+    "小初": 36,
+    "一号": 26,
+    "小一": 24,
+    "二号": 22,
+    "小二": 18,
+    "三号": 16,
+    "小三": 15,
+    "四号": 14,
+    "小四": 12,
+    "五号": 10.5,
+    "小五": 9,
+    "六号": 7.5,
+    "小六": 6.5
+  },
+  "indent_reference": {
+    "1字符": 12,
+    "2字符": 24,
+    "3字符": 36
+  },
+  "presets": {
+    "official": {
+      "name": "公文标准",
+      "description": "GB/T 9704-2012 党政机关公文格式",
+      "rules": {
+        "heading_1": {
+          "font": {
+            "name": "黑体",
+            "size_pt": 22,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 12,
+            "space_after": 12,
+            "alignment": "center"
+          }
+        },
+        "heading_2": {
+          "font": {
+            "name": "黑体",
+            "size_pt": 16,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 6,
+            "space_after": 6,
+            "alignment": "left"
+          }
+        },
+        "heading_3": {
+          "font": {
+            "name": "仿宋",
+            "size_pt": 16,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 6,
+            "space_after": 6,
+            "alignment": "left"
+          }
+        },
+        "heading_4": {
+          "font": {
+            "name": "仿宋",
+            "size_pt": 14,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 3,
+            "space_after": 3,
+            "alignment": "left"
+          }
+        },
+        "body": {
+          "font": {
+            "name": "仿宋",
+            "size_pt": 12,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 24,
+            "line_spacing": 1.5,
+            "space_before": 0,
+            "space_after": 0,
+            "alignment": "justify"
+          }
+        },
+        "emphasis": {
+          "bold": false,
+          "italic": false,
+          "color": null,
+          "description": "公文正文内一般不使用额外强调"
+        },
+        "caption": {
+          "font": {
+            "name": "仿宋",
+            "size_pt": 10.5,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 3,
+            "space_after": 3,
+            "alignment": "center"
+          },
+          "description": "图表题注，五号仿宋居中"
+        }
+      }
+    },
+    "thesis": {
+      "name": "论文标准",
+      "description": "常见学术论文格式",
+      "rules": {
+        "heading_1": {
+          "font": {
+            "name_east_asia": "黑体",
+            "name_ascii": "Times New Roman",
+            "size_pt": 18,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 12,
+            "space_after": 6,
+            "alignment": "center"
+          }
+        },
+        "heading_2": {
+          "font": {
+            "name_east_asia": "黑体",
+            "name_ascii": "Times New Roman",
+            "size_pt": 14,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 6,
+            "space_after": 6,
+            "alignment": "left"
+          }
+        },
+        "heading_3": {
+          "font": {
+            "name_east_asia": "黑体",
+            "name_ascii": "Times New Roman",
+            "size_pt": 12,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 6,
+            "space_after": 6,
+            "alignment": "left"
+          }
+        },
+        "heading_4": {
+          "font": {
+            "name_east_asia": "宋体",
+            "name_ascii": "Times New Roman",
+            "size_pt": 12,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 3,
+            "space_after": 3,
+            "alignment": "left"
+          }
+        },
+        "body": {
+          "font": {
+            "name_east_asia": "宋体",
+            "name_ascii": "Times New Roman",
+            "size_pt": 12,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 24,
+            "line_spacing": 1.5,
+            "space_before": 6,
+            "space_after": 6,
+            "alignment": "justify"
+          }
+        },
+        "emphasis": {
+          "bold": true,
+          "italic": false,
+          "color": null,
+          "description": "关键词、术语使用加粗"
+        },
+        "caption": {
+          "font": {
+            "name_east_asia": "宋体",
+            "name_ascii": "Times New Roman",
+            "size_pt": 10.5,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 3,
+            "space_after": 3,
+            "alignment": "center"
+          },
+          "description": "图表题注，五号宋体居中"
+        }
+      }
+    },
+    "default": {
+      "name": "默认",
+      "description": "简洁默认格式",
+      "rules": {
+        "heading_1": {
+          "font": {
+            "name": "黑体",
+            "size_pt": 18,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 6,
+            "space_after": 6,
+            "alignment": "center"
+          }
+        },
+        "heading_2": {
+          "font": {
+            "name": "黑体",
+            "size_pt": 14,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 6,
+            "space_after": 6,
+            "alignment": "left"
+          }
+        },
+        "heading_3": {
+          "font": {
+            "name": "黑体",
+            "size_pt": 12,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 3,
+            "space_after": 3,
+            "alignment": "left"
+          }
+        },
+        "body": {
+          "font": {
+            "name": "宋体",
+            "size_pt": 12,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 24,
+            "line_spacing": 1.0,
+            "space_before": 0,
+            "space_after": 0,
+            "alignment": "left"
+          }
+        },
+        "emphasis": {
+          "bold": false,
+          "italic": false,
+          "color": null
+        },
+        "caption": {
+          "font": {
+            "name": "宋体",
+            "size_pt": 10.5,
+            "color": null
+          },
+          "paragraph": {
+            "first_line_indent": 0,
+            "line_spacing": 1.0,
+            "space_before": 3,
+            "space_after": 3,
+            "alignment": "center"
+          }
+        }
+      }
+    }
+  },
+  "scope_mapping": {
+    "heading_1": "Heading 1 / 标题 1",
+    "heading_2": "Heading 2 / 标题 2",
+    "heading_3": "Heading 3 / 标题 3",
+    "heading_4": "Heading 4 / 标题 4",
+    "heading_5": "Heading 5 / 标题 5",
+    "heading_6": "Heading 6 / 标题 6",
+    "heading_7": "Heading 7 / 标题 7",
+    "heading_8": "Heading 8 / 标题 8",
+    "heading_9": "Heading 9 / 标题 9",
+    "body": "Normal / 正文",
+    "emphasis": "正文内 run 级",
+    "caption": "题注样式"
+  }
+}
