@@ -57,6 +57,9 @@ class FontConfig(BaseModel):
     )
     size_pt: Optional[float] = Field(None, description="字号（磅），小四号≈12pt")
     color: Optional[str] = Field(None, description="颜色，支持 hex 如 #000000 或颜色名称")
+    bold: Optional[bool] = Field(None, description="加粗，默认各级标题为 true")
+    italic: Optional[bool] = Field(None, description="斜体")
+    underline: Optional[bool] = Field(None, description="下划线")
 
 
 class ParagraphConfig(BaseModel):

@@ -187,6 +187,12 @@ class WordProcessor:
                     run.font.size = Pt(font_config.size_pt)
                 if rgb_color:
                     run.font.color.rgb = rgb_color
+                if font_config.bold is not None:
+                    run.font.bold = font_config.bold
+                if font_config.italic is not None:
+                    run.font.italic = font_config.italic
+                if font_config.underline is not None:
+                    run.font.underline = font_config.underline
                 affected += 1
         logger.info("set_global_styles 完成，共处理 %d 个 run", affected)
 

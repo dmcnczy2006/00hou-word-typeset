@@ -31,7 +31,8 @@
           "font": {
             "name": "黑体",
             "size_pt": 22,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -45,7 +46,8 @@
           "font": {
             "name": "黑体",
             "size_pt": 16,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -59,7 +61,8 @@
           "font": {
             "name": "仿宋",
             "size_pt": 16,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -73,7 +76,8 @@
           "font": {
             "name": "仿宋",
             "size_pt": 14,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -129,7 +133,8 @@
             "name_east_asia": "黑体",
             "name_ascii": "Times New Roman",
             "size_pt": 18,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -144,7 +149,8 @@
             "name_east_asia": "黑体",
             "name_ascii": "Times New Roman",
             "size_pt": 14,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -159,7 +165,8 @@
             "name_east_asia": "黑体",
             "name_ascii": "Times New Roman",
             "size_pt": 12,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -174,7 +181,8 @@
             "name_east_asia": "宋体",
             "name_ascii": "Times New Roman",
             "size_pt": 12,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -231,7 +239,8 @@
           "font": {
             "name": "黑体",
             "size_pt": 18,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -245,7 +254,8 @@
           "font": {
             "name": "黑体",
             "size_pt": 14,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,
@@ -259,7 +269,8 @@
           "font": {
             "name": "黑体",
             "size_pt": 12,
-            "color": null
+            "color": null,
+            "bold": true
           },
           "paragraph": {
             "first_line_indent": 0,

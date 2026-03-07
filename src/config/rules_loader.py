@@ -3,6 +3,10 @@
 
 从 typesetting_rules.json 加载规则，统一返回 Schema 类型（RulesDocument、ScopeRule 等）。
 接口以 Schema 为准，与 src/schemas/typesetting.py 对齐。
+
+调用关系：
+    prompts.llm_prompt.build_intent_prompt()
+        → format_rules_for_prompt(preset_name)  # 生成规则片段注入 prompt
 """
 
 import json
@@ -135,6 +139,8 @@ def format_rules_for_prompt(
     """
     将预设规则格式化为 LLM prompt 可读的文本。
 
+    调用：prompts.llm_prompt.build_intent_prompt() 调用本函数
+
     Args:
         preset_name: 预设名称，若为 None 则返回通用说明
         rules: 规则文档
@@ -166,10 +172,10 @@ def format_rules_for_prompt(
             lines.append(f"- {name} ≈ {pt}pt")
     lines.append("")
 
-    # 多 scope 输出说明
+    # 多 scope 输出说明（与 prompts/llm_prompt.py 主模板配合）
     lines.append("### 多 scope 输出（重要）")
     lines.append("当用户指定多个元素（如「正文...；一级标题...」）时，必须使用 scope_rules 数组，每个元素一条配置。")
-    lines.append('示例：scope_rules: [{"target_scope": "body", "font_config": {"name": "仿宋", "size_pt": 12}, "paragraph_config": {"first_line_indent": 24, "line_spacing": 1.5}}, {"target_scope": "heading_1", "font_config": {"name": "黑体", "size_pt": 22}, "paragraph_config": {"alignment": "center"}}]')
+    lines.append('示例：scope_rules: [{"target_scope": "body", "font_config": {"name": "仿宋", "size_pt": 12}, "paragraph_config": {"first_line_indent": 24, "line_spacing": 1.5}}, {"target_scope": "heading_1", "font_config": {"name": "黑体", "size_pt": 22, "bold": true}, "paragraph_config": {"alignment": "center"}}]')
     lines.append("单 scope 时仍可使用 global_styles + paragraph_config + target_scope。")
     lines.append("")
 
@@ -185,6 +191,12 @@ def format_rules_for_prompt(
                         name = entry.font.name or entry.font.name_east_asia or "?"
                         size = entry.font.size_pt
                         parts.append(f"{name} {size}pt" if size else name)
+                        if entry.font.bold:
+                            parts.append("加粗")
+                        if entry.font.italic:
+                            parts.append("斜体")
+                        if entry.font.underline:
+                            parts.append("下划线")
                     if entry.paragraph:
                         if entry.paragraph.alignment:
                             parts.append(f"对齐:{entry.paragraph.alignment}")

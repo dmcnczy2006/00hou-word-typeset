@@ -41,6 +41,9 @@
 | name | 字体名 | 仿宋、黑体、宋体 |
 | size_pt | 字号（磅） | 12 = 小四号，22 = 二号 |
 | color | 颜色 | #000000 黑色 |
+| bold | 加粗 | true / false，默认各级标题加粗 |
+| italic | 斜体 | true / false |
+| underline | 下划线 | true / false |
 
 ### 3.2 段落打扮（ParagraphConfig）
 

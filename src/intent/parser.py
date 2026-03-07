@@ -3,6 +3,14 @@
 
 接收用户自然语言指令，调用 LLM 输出结构化 TypesettingIntent JSON。
 支持从 typesetting_rules.json 注入规则上下文，适配各级标题、正文、强调、题注等。
+
+调用关系：
+    main.process_document() / 外部调用
+        → IntentParser.parse(user_prompt, preset)
+            → prompts.llm_prompt.build_intent_prompt()  # 构建 prompt
+            → llm.complete(prompt)
+            → 解析 JSON 为 TypesettingIntent
+            → _merge_intents() 与预设合并
 """
 
 import json
@@ -16,7 +24,7 @@ from pydantic import ValidationError
 
 from ..schemas.typesetting import FontConfig, ParagraphConfig, ScopeRule, TypesettingIntent
 from ..config.presets import Config
-from ..config.rules_loader import format_rules_for_prompt
+from ..prompts.llm_prompt import build_intent_prompt
 
 # 智能样式映射：中文字号/字体描述 → 标准参数
 FONT_SIZE_MAP = {
@@ -41,32 +49,6 @@ FONT_SIZE_MAP = {
 # 首行缩进：字符数 → 磅（1 字符 ≈ 12pt 五号字宽）
 def _chars_to_pt(chars: float) -> float:
     return chars * 12.0
-
-
-# 意图解析的 prompt 模板（rules_context 由 format_rules_for_prompt 动态注入）
-INTENT_PROMPT_TEMPLATE = """你是一个 Word 文档排版助手。请根据用户的自然语言指令，输出结构化的 JSON 配置。
-
-## 用户指令
-{user_prompt}
-
-## 输出要求
-请严格按照以下 JSON Schema 输出，只返回 JSON 对象，不要包含 markdown 代码块或其它说明文字。
-
-### 字体（支持中西文分设）
-- 常见中文字体：仿宋、宋体、黑体、楷体、微软雅黑
-- 常见西文字体：Times New Roman、Arial
-- 若用户要求中西文不同字体，使用 name_east_asia（中文）和 name_ascii（西文），例如：「正文中文仿宋、西文 Times New Roman」→ {{"name_east_asia": "仿宋", "name_ascii": "Times New Roman"}}
-- 若仅指定一种字体，使用 name 即可
-
-### 对齐方式
-left（左对齐）、center（居中）、right（右对齐）、justify（两端对齐）
-
-{rules_context}
-
-## JSON Schema
-{schema_json}
-
-请直接输出 JSON："""
 
 
 class _DefaultMockConnector:
@@ -141,12 +123,10 @@ class IntentParser:
             ensure_ascii=False,
             indent=2,
         )
-        # 从 typesetting_rules.json 注入规则上下文，使 LLM 适配新 rules
-        rules_context = format_rules_for_prompt(preset_name=preset)
-        prompt = INTENT_PROMPT_TEMPLATE.format(
+        prompt = build_intent_prompt(
             user_prompt=user_prompt.strip(),
-            rules_context=rules_context,
             schema_json=schema_json,
+            preset_name=preset,
         )
 
         try:
@@ -209,6 +189,9 @@ class IntentParser:
             name_ascii=override.name_ascii if override.name_ascii is not None else base.name_ascii,
             size_pt=override.size_pt if override.size_pt is not None else base.size_pt,
             color=override.color if override.color is not None else base.color,
+            bold=override.bold if override.bold is not None else base.bold,
+            italic=override.italic if override.italic is not None else base.italic,
+            underline=override.underline if override.underline is not None else base.underline,
         )
 
     def _merge_paragraph_config(
@@ -252,12 +235,30 @@ class IntentParser:
         # 以预设 scope_rules 为底
         base_map = {sr.target_scope: sr for sr in base.scope_rules}
         # 用户 override 覆盖同 scope
+        all_scope_rule = None
         if override.scope_rules:
             for sr in override.scope_rules:
+                if sr.target_scope == "all":
+                    all_scope_rule = sr
+                    continue
                 if sr.target_scope in base_map:
                     base_map[sr.target_scope] = self._merge_scope_rule(base_map[sr.target_scope], sr)
                 else:
                     base_map[sr.target_scope] = sr
+
+        # 当用户指定 target_scope: "all" 且含 bold/italic/underline 时，仅传播这三项到所有 scope
+        if all_scope_rule and all_scope_rule.font_config:
+            fc = all_scope_rule.font_config
+            if fc.bold is not None or fc.italic is not None or fc.underline is not None:
+                override_font = FontConfig(bold=fc.bold, italic=fc.italic, underline=fc.underline)
+                for scope, sr in list(base_map.items()):
+                    merged_font = self._merge_font_config(sr.font_config, override_font)
+                    base_map[scope] = ScopeRule(
+                        target_scope=scope,
+                        font_config=merged_font,
+                        paragraph_config=sr.paragraph_config,
+                    )
+
         merged_scope_rules = list(base_map.values())
 
         global_styles = self._merge_font_config(base.global_styles, override.global_styles)

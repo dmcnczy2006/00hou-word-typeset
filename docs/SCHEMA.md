@@ -32,13 +32,21 @@ src/schemas/typesetting.py   # 单一数据源，所有类型定义
 - `emphasis`：强调（run 级）
 - `all`：全文
 
+### FontConfig 扩展（bold / italic / underline）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| bold | Optional[bool] | 加粗，默认各级标题为 true |
+| italic | Optional[bool] | 斜体 |
+| underline | Optional[bool] | 下划线 |
+
 ### ScopeRule
 
 单作用范围的排版规则，支持 JSON 别名：
 
 | Schema 字段        | JSON 别名 | 说明     |
 |--------------------|-----------|----------|
-| font_config        | font      | 字体配置 |
+| font_config        | font      | 字体配置（含 bold/italic/underline） |
 | paragraph_config   | paragraph | 段落配置 |
 
 ### TypesettingIntent

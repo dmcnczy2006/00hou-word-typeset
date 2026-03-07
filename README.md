@@ -68,6 +68,8 @@ process_document(
 │   ├── config/
 │   │   ├── presets.py       # Config 预设规则
 │   │   └── rules_loader.py  # 排版规则 JSON 加载器
+│   ├── prompts/
+│   │   └── llm_prompt.py    # LLM 提示词统一入口
 │   ├── schemas/typesetting.py  # Pydantic Schema
 │   ├── intent/parser.py     # IntentParser 意图解析器
 │   ├── formatter/engine.py  # WordProcessor 排版引擎
