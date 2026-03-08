@@ -43,7 +43,7 @@ class OpenAIConnector(LLMConnector):
 
     def __init__(
         self,
-        model: str = "deepseek-chat",
+        model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
     ):
@@ -51,13 +51,13 @@ class OpenAIConnector(LLMConnector):
         初始化 OpenAI 连接器
 
         Args:
-            model: 模型名称
+            model: 模型名称，默认从环境变量 OPENAI_MODEL 读取，未设置时用 deepseek-chat
             api_key: API Key，默认从环境变量 OPENAI_API_KEY 读取
-            base_url: API 基础 URL，可用于代理或兼容 OpenAI 格式的本地服务
+            base_url: API 基础 URL，默认从环境变量 OPENAI_BASE_URL 读取
         """
         if OpenAI is None:
             raise ImportError("请安装 openai: pip install openai")
-        self.model = model
+        self.model = model or os.getenv("OPENAI_MODEL", "deepseek-chat")
         self._client = OpenAI(
             api_key=api_key or os.getenv("OPENAI_API_KEY"),
             base_url=base_url or os.getenv("OPENAI_BASE_URL"),

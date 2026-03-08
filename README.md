@@ -9,6 +9,43 @@
 - **预设规则**：公文标准、论文标准等常用排版预设
 - **可扩展**：支持切换 LLM 后端（OpenAI、本地模型等）
 
+## 排版逻辑
+
+排版引擎（`WordProcessor`）对每条 `scope_rule` 执行**双重应用**：既修改 Word 文档的样式定义，又批量设置已有内容的直接格式。
+
+### 双重应用
+
+| 操作 | 1. 样式定义 | 2. 批量直接格式 |
+|------|-------------|-----------------|
+| **set_global_styles** | 修改 Normal、Heading 1 等样式的字体定义 | 遍历匹配范围的 runs，直接应用字体 |
+| **paragraph_shaping** | 修改样式的段落格式（行距、缩进等） | 遍历匹配范围的段落，直接应用段落格式 |
+
+- **样式定义**：新输入的内容将自动继承，样式面板中会显示更新后的设置
+- **批量设置**：确保已有内容立即生效
+
+### Heading 样式处理
+
+Heading 1~9 默认使用**主题字体**（`w:asciiTheme`、`w:eastAsiaTheme` 等），在 OOXML 中会覆盖显式字体。排版引擎在设置字体时会先移除这些主题属性，使显式字体（如黑体、仿宋）正确生效。
+
+### 作用范围与 Word 样式映射
+
+| target_scope | 对应的 Word 样式 |
+|--------------|------------------|
+| body | Normal（正文） |
+| heading_1 ~ heading_9 | Heading 1 ~ Heading 9 |
+| heading | Heading 1 ~ 9 全部 |
+| caption | Caption（题注） |
+| all | Normal + Heading 1~9 + Caption |
+
+### 执行流程
+
+```
+TypesettingIntent → to_scope_rules() → 逐条 ScopeRule
+  ├─ font_config  → set_global_styles（字体、字号、颜色、加粗等）
+  ├─ paragraph_config → paragraph_shaping（首行缩进、行距、段前段后、对齐）
+  └─ replacements → semantic_replace（文本替换，含表格）
+```
+
 ## 安装
 
 ```bash
@@ -17,11 +54,17 @@ pip install -r requirements.txt
 
 ## 配置
 
-复制 `.env.example` 为 `.env`，填入 `OPENAI_API_KEY`（使用 LLM 解析意图时必需）：
+复制 `.env.example` 为 `.env`，填入以下环境变量（使用 LLM 解析意图时必需）：
 
 ```bash
 cp .env.example .env
 ```
+
+| 变量 | 说明 |
+|------|------|
+| OPENAI_API_KEY | API Key（必需） |
+| OPENAI_MODEL | 模型名称，如 deepseek-chat、gpt-4o-mini（默认 deepseek-chat） |
+| OPENAI_BASE_URL | 可选，API 地址，用于代理或本地服务 |
 
 ## 使用方式
 

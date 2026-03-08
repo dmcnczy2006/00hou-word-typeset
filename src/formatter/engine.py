@@ -83,6 +83,118 @@ def _alignment_from_str(align: Optional[str]):
     return mapping.get(align.lower())
 
 
+# target_scope -> Word 内置样式名（python-docx 使用英文名）
+SCOPE_TO_STYLE_NAMES: dict[str, list[str]] = {
+    "body": ["Normal"],
+    "heading": ["Heading 1", "Heading 2", "Heading 3", "Heading 4", "Heading 5", "Heading 6", "Heading 7", "Heading 8", "Heading 9"],
+    "heading_1": ["Heading 1"],
+    "heading_2": ["Heading 2"],
+    "heading_3": ["Heading 3"],
+    "heading_4": ["Heading 4"],
+    "heading_5": ["Heading 5"],
+    "heading_6": ["Heading 6"],
+    "heading_7": ["Heading 7"],
+    "heading_8": ["Heading 8"],
+    "heading_9": ["Heading 9"],
+    "caption": ["Caption"],
+    "all": ["Normal", "Heading 1", "Heading 2", "Heading 3", "Heading 4", "Heading 5", "Heading 6", "Heading 7", "Heading 8", "Heading 9", "Caption"],
+}
+
+
+def _get_style_names_for_scope(target_scope: str) -> list[str]:
+    """根据 target_scope 返回要修改的 Word 样式名列表"""
+    return SCOPE_TO_STYLE_NAMES.get(target_scope, ["Normal"])
+
+
+def _resolve_font(raw: Optional[str]) -> Optional[str]:
+    """解析字体名（智能映射）"""
+    if not raw:
+        return None
+    return FONT_NAME_MAP.get(raw, raw)
+
+
+# 主题字体属性：在 Heading 等样式中会覆盖显式字体，需移除后显式字体才生效
+# 注：OOXML 中为 cstheme（小写）
+_THEME_FONT_ATTRS = (
+    qn("w:asciiTheme"),
+    qn("w:eastAsiaTheme"),
+    qn("w:hAnsiTheme"),
+    qn("w:cstheme"),
+)
+
+
+def _remove_theme_font_attrs(rFonts) -> None:
+    """移除 rFonts 中的主题字体属性，使显式字体（ascii/eastAsia 等）生效"""
+    for attr in _THEME_FONT_ATTRS:
+        if attr in rFonts.attrib:
+            del rFonts.attrib[attr]
+
+
+def _apply_font_to_style(style, font_config: FontConfig) -> None:
+    """
+    将 FontConfig 应用到 Word 样式定义（修改样式本身，而非直接格式）
+    需同时设置 ascii 和 eastAsia 以支持中文字体。
+    Heading 等样式使用主题字体，会覆盖显式字体，故需先移除主题属性。
+    """
+    font_ascii = _resolve_font(font_config.name_ascii or font_config.name)
+    font_east_asia = _resolve_font(font_config.name_east_asia or font_config.name)
+    rgb_color = _parse_color(font_config.color)
+
+    font = style.font
+    if font_ascii or font_east_asia:
+        rPr = style._element.get_or_add_rPr()
+        rFonts = rPr.get_or_add_rFonts()
+        _remove_theme_font_attrs(rFonts)  # 移除主题字体，使显式字体生效
+    if font_ascii:
+        font.name = font_ascii
+    if font_east_asia:
+        try:
+            rPr = style._element.get_or_add_rPr()
+            rFonts = rPr.get_or_add_rFonts()
+            rFonts.set(qn("w:eastAsia"), font_east_asia)
+        except Exception:
+            font.name = font_east_asia
+    if font_config.size_pt is not None:
+        font.size = Pt(font_config.size_pt)
+    if rgb_color:
+        font.color.rgb = rgb_color
+    if font_config.bold is not None:
+        font.bold = font_config.bold
+    if font_config.italic is not None:
+        font.italic = font_config.italic
+    if font_config.underline is not None:
+        font.underline = font_config.underline
+
+
+def _apply_font_to_run(run, font_config: FontConfig) -> None:
+    """
+    将 FontConfig 应用到 run 的直接格式（批量设置已有内容的字体）
+    """
+    font_ascii = _resolve_font(font_config.name_ascii or font_config.name)
+    font_east_asia = _resolve_font(font_config.name_east_asia or font_config.name)
+    rgb_color = _parse_color(font_config.color)
+
+    if font_ascii:
+        run.font.name = font_ascii
+    if font_east_asia:
+        try:
+            rPr = run._element.get_or_add_rPr()
+            rFonts = rPr.get_or_add_rFonts()
+            rFonts.set(qn("w:eastAsia"), font_east_asia)
+        except Exception:
+            run.font.name = font_east_asia
+    if font_config.size_pt is not None:
+        run.font.size = Pt(font_config.size_pt)
+    if rgb_color:
+        run.font.color.rgb = rgb_color
+    if font_config.bold is not None:
+        run.font.bold = font_config.bold
+    if font_config.italic is not None:
+        run.font.italic = font_config.italic
+    if font_config.underline is not None:
+        run.font.underline = font_config.underline
+
+
 class WordProcessor:
     """
     Word 文档排版处理器
@@ -136,65 +248,38 @@ class WordProcessor:
         target_scope: str = "all",
     ) -> None:
         """
-        批量设置全局字体样式（字体、字号、颜色、对齐）
+        同时执行：1) 修改 Word 文档的样式定义；2) 批量设置已有内容的字体直接格式。
+
+        - 样式定义：Normal、Heading 1 等会更新，新输入内容将自动继承
+        - 批量设置：遍历匹配范围的段落/runs，直接应用字体格式，确保已有内容立即生效
 
         Args:
             font_config: 字体配置
             target_scope: 作用范围。支持：body、heading、heading_1~heading_9、caption、all
         """
-        # 解析字体名（智能映射）：中西文可分别指定
-        def _resolve_font(raw: Optional[str]) -> Optional[str]:
-            if not raw:
-                return None
-            return FONT_NAME_MAP.get(raw, raw)
-
-        font_ascii = _resolve_font(font_config.name_ascii or font_config.name)
-        font_east_asia = _resolve_font(font_config.name_east_asia or font_config.name)
-
-        # 解析颜色
-        rgb_color = _parse_color(font_config.color)
-
+        # 1. 修改样式定义
+        style_names = _get_style_names_for_scope(target_scope)
         logger.info(
-            "set_global_styles: 西文=%s, 中文=%s, 字号=%spt, 范围=%s",
-            font_ascii,
-            font_east_asia,
-            font_config.size_pt,
+            "set_global_styles: 修改样式定义，范围=%s, 样式=%s",
             target_scope,
+            style_names,
         )
-        affected = 0
+        for style_name in style_names:
+            try:
+                style = self._doc.styles[style_name]
+                _apply_font_to_style(style, font_config)
+            except KeyError:
+                logger.debug("样式 %s 不存在于文档中，跳过", style_name)
+
+        # 2. 批量设置已有内容的字体直接格式
+        run_count = 0
         for para in self._doc.paragraphs:
             if not self._match_scope(para, target_scope):
                 continue
-
             for run in para.runs:
-                # 西文：w:ascii / w:hAnsi（run.font.name 会创建 rPr/rFonts）
-                if font_ascii:
-                    run.font.name = font_ascii
-                # 中文：w:eastAsia（需单独设置，否则 CJK 不生效）
-                if font_east_asia:
-                    try:
-                        rPr = run._element.get_or_add_rPr()
-                        if rPr.rFonts is not None:
-                            rPr.rFonts.set(qn("w:eastAsia"), font_east_asia)
-                        else:
-                            run.font.name = font_east_asia
-                            rPr = run._element.get_or_add_rPr()
-                            if rPr.rFonts is not None:
-                                rPr.rFonts.set(qn("w:eastAsia"), font_east_asia)
-                    except Exception:
-                        run.font.name = font_east_asia
-                if font_config.size_pt is not None:
-                    run.font.size = Pt(font_config.size_pt)
-                if rgb_color:
-                    run.font.color.rgb = rgb_color
-                if font_config.bold is not None:
-                    run.font.bold = font_config.bold
-                if font_config.italic is not None:
-                    run.font.italic = font_config.italic
-                if font_config.underline is not None:
-                    run.font.underline = font_config.underline
-                affected += 1
-        logger.info("set_global_styles 完成，共处理 %d 个 run", affected)
+                _apply_font_to_run(run, font_config)
+                run_count += 1
+        logger.info("set_global_styles 完成：样式定义已更新，共处理 %d 个 run", run_count)
 
     def semantic_replace(
         self,
@@ -255,24 +340,51 @@ class WordProcessor:
         target_scope: str = "all",
     ) -> None:
         """
-        段落整形：设置行间距、段前段后距离、对齐方式
+        同时执行：1) 修改 Word 文档样式的段落格式定义；2) 批量设置已有段落的直接格式。
+
+        - 样式定义：新输入的内容将自动继承行距、首行缩进等
+        - 批量设置：遍历匹配范围的段落，直接应用段落格式，确保已有内容立即生效
 
         Args:
             paragraph_config: 段落配置
             target_scope: 作用范围
         """
-        logger.info("paragraph_shaping: 范围=%s, 首行缩进=%s, 行距=%s", target_scope, paragraph_config.first_line_indent, paragraph_config.line_spacing)
-        affected = 0
+        # 1. 修改样式定义
+        style_names = _get_style_names_for_scope(target_scope)
+        logger.info(
+            "paragraph_shaping: 修改样式定义，范围=%s, 样式=%s, 首行缩进=%s, 行距=%s",
+            target_scope,
+            style_names,
+            paragraph_config.first_line_indent,
+            paragraph_config.line_spacing,
+        )
+        for style_name in style_names:
+            try:
+                style = self._doc.styles[style_name]
+                pf = style.paragraph_format
+                if paragraph_config.first_line_indent is not None:
+                    pf.first_line_indent = Pt(paragraph_config.first_line_indent)
+                if paragraph_config.line_spacing is not None:
+                    pf.line_spacing = paragraph_config.line_spacing
+                if paragraph_config.space_before is not None:
+                    pf.space_before = Pt(paragraph_config.space_before)
+                if paragraph_config.space_after is not None:
+                    pf.space_after = Pt(paragraph_config.space_after)
+                align = _alignment_from_str(paragraph_config.alignment)
+                if align is not None:
+                    pf.alignment = align
+            except KeyError:
+                logger.debug("样式 %s 不存在于文档中，跳过", style_name)
+
+        # 2. 批量设置已有段落的直接格式
+        para_count = 0
         for para in self._doc.paragraphs:
             if not self._match_scope(para, target_scope):
                 continue
-
             pf = para.paragraph_format
-
             if paragraph_config.first_line_indent is not None:
                 pf.first_line_indent = Pt(paragraph_config.first_line_indent)
             if paragraph_config.line_spacing is not None:
-                # 倍行距：1.5 表示 1.5 倍
                 pf.line_spacing = paragraph_config.line_spacing
             if paragraph_config.space_before is not None:
                 pf.space_before = Pt(paragraph_config.space_before)
@@ -281,8 +393,8 @@ class WordProcessor:
             align = _alignment_from_str(paragraph_config.alignment)
             if align is not None:
                 pf.alignment = align
-            affected += 1
-        logger.info("paragraph_shaping 完成，共处理 %d 个段落", affected)
+            para_count += 1
+        logger.info("paragraph_shaping 完成：样式定义已更新，共处理 %d 个段落", para_count)
 
     def apply_first_line_indent(
         self,
@@ -290,16 +402,16 @@ class WordProcessor:
         target_scope: str = "body",
     ) -> None:
         """
-        应用首行缩进
+        修改样式的首行缩进定义
 
         Args:
             indent_pt: 缩进量（磅），2 字符 ≈ 24pt
             target_scope: 作用范围（body、heading、heading_1~9、caption、all）
         """
-        for para in self._doc.paragraphs:
-            if not self._match_scope(para, target_scope):
-                continue
-            para.paragraph_format.first_line_indent = Pt(indent_pt)
+        self.paragraph_shaping(
+            ParagraphConfig(first_line_indent=indent_pt),
+            target_scope=target_scope,
+        )
 
     def _is_heading(self, paragraph) -> bool:
         """判断段落是否为标题样式"""
