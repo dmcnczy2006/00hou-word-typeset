@@ -4,8 +4,9 @@
 
 ## 功能特性
 
-- **意图解析**：将自然语言指令（如「把正文设为小四号仿宋，首行缩进2字符」）解析为结构化配置
-- **排版引擎**：批量设置字体、字号、颜色、段落格式、文本替换
+- **Y Mode（单次再排版）**：将自然语言指令（如「把正文设为小四号仿宋，首行缩进2字符」）解析为结构化配置，一次完成排版
+- **Z Mode（多步骤工作流）**：通过自然语言描述多步骤工作流，如「1. 将标题2变为标题1；2. 设置多级列表；3. 再排版，正文小四」→ LLM 解析为工作流 JSON，按序执行
+- **排版引擎**：批量设置字体、字号、颜色、段落格式、文本替换、标题升降级、多级列表、页面边距、页眉页脚、连续空行合并、更新域
 - **预设规则**：公文标准、论文标准等常用排版预设
 - **可扩展**：支持切换 LLM 后端（OpenAI、本地模型等）
 
@@ -73,11 +74,18 @@ cp .env.example .env
 ```python
 from src.main import process_document
 
-# 处理文档，应用用户指令与预设
+# Y Mode：单次再排版
 process_document(
     file_path="report.docx",
     user_prompt="正文小四仿宋，首行缩进2字符",
     preset="official",
+)
+
+# Z Mode：多步骤工作流（mode 可选 "y"、"z"、"auto"，默认 auto 自动判断）
+process_document(
+    file_path="report.docx",
+    user_prompt="1. 将标题2变为标题1；2. 为文档设置多级列表；3. 再排版，正文小四、标题一号",
+    mode="z",
 )
 ```
 
@@ -85,7 +93,14 @@ process_document(
 
 ```bash
 # 从项目根目录运行
+# Y Mode（单次再排版，默认 auto 会根据指令自动判断）
 python -m src.main sample.docx "正文小四仿宋，首行缩进2字符"
+
+# Z Mode（多步骤工作流，使用 -m z 强制指定）
+python -m src.main sample.docx "1. 将标题2变为标题1；2. 设置多级列表；3. 再排版，正文小四" -m z
+
+# 指定输出路径与预设
+python -m src.main sample.docx "正文小四仿宋" -o output.docx -p thesis
 ```
 
 ### 使用 OpenAI 解析意图
@@ -112,11 +127,16 @@ process_document(
 │   │   ├── presets.py       # Config 预设规则
 │   │   └── rules_loader.py  # 排版规则 JSON 加载器
 │   ├── prompts/
-│   │   └── llm_prompt.py    # LLM 提示词统一入口
-│   ├── schemas/typesetting.py  # Pydantic Schema
-│   ├── intent/parser.py     # IntentParser 意图解析器
+│   │   ├── llm_prompt.py    # Y Mode 意图解析提示词
+│   │   └── workflow_prompt.py # Z Mode 工作流解析提示词
+│   ├── schemas/typesetting.py  # Pydantic Schema（含 Workflow）
+│   ├── intent/
+│   │   ├── parser.py        # IntentParser（Y Mode）
+│   │   └── workflow_parser.py # WorkflowParser（Z Mode）
 │   ├── formatter/engine.py  # WordProcessor 排版引擎
-│   └── dispatcher/command.py # CommandDispatcher 调度器
+│   └── dispatcher/
+│       ├── command.py      # CommandDispatcher（Y Mode）
+│       └── workflow.py     # WorkflowDispatcher（Z Mode）
 ├── docs/
 │   └── TYPESETTING_RULES.md # 排版规则说明文档
 ├── typesetting_rules.json   # 排版规则 JSON 配置（可读可编辑）
@@ -139,6 +159,7 @@ process_document(
 
 - **[docs/SCHEMA.md](docs/SCHEMA.md)**：Schema 规范与扩展指南
 - **[docs/SCHEMA_入门.md](docs/SCHEMA_入门.md)**：Schema 入门（小白版）
+- **[docs/WORKFLOW.md](docs/WORKFLOW.md)**：Z Mode 工作流文档（步骤类型、JSON Schema、使用示例）
 - **[docs/TYPESETTING_RULES.md](docs/TYPESETTING_RULES.md)**：排版规则说明（人类可读）
 - **typesetting_rules.json**：排版规则 JSON 配置（与 Schema 对齐）
 

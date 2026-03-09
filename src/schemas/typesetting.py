@@ -9,7 +9,7 @@
 后续开发请优先扩展本 Schema，再适配调用方。
 """
 
-from typing import List, Literal, Optional
+from typing import Annotated, List, Literal, Optional, Union
 
 from pydantic import AliasChoices, BaseModel, Field
 
@@ -116,6 +116,114 @@ class ReplaceRule(BaseModel):
     search: str = Field(..., description="查找内容，支持正则表达式")
     replace: str = Field(..., description="替换内容")
     use_regex: bool = Field(False, description="是否将 search 视为正则表达式")
+
+
+# ---------------------------------------------------------------------------
+# Z Mode 工作流 Schema
+# ---------------------------------------------------------------------------
+
+class HeadingChangeStep(BaseModel):
+    """标题升降级步骤"""
+
+    type: Literal["heading_change"] = "heading_change"
+    from_scope: str = Field(..., description="源 scope，如 heading_2")
+    to_scope: str = Field(..., description="目标 scope，如 heading_1")
+
+
+class ApplyListStep(BaseModel):
+    """应用列表步骤"""
+
+    type: Literal["apply_list"] = "apply_list"
+    target_scope: str = Field(
+        ...,
+        description="作用范围：heading、body、all",
+    )
+    list_style: str = Field(
+        ...,
+        description="列表样式：multilevel、decimal、bullet",
+    )
+
+
+class ReTypesetStep(BaseModel):
+    """再排版步骤"""
+
+    type: Literal["re_typeset"] = "re_typeset"
+    preset: Optional[str] = Field("official", description="预设名称")
+    user_override: Optional[str] = Field(
+        None,
+        description="传给 IntentParser 的自然语言，如「正文小四、标题一号」",
+    )
+
+
+class PageMarginsStep(BaseModel):
+    """页面边距设置步骤"""
+
+    type: Literal["page_margins"] = "page_margins"
+    top_pt: Optional[float] = Field(None, description="上边距（磅），1英寸≈72pt")
+    bottom_pt: Optional[float] = Field(None, description="下边距（磅）")
+    left_pt: Optional[float] = Field(None, description="左边距（磅）")
+    right_pt: Optional[float] = Field(None, description="右边距（磅）")
+
+
+class HeaderFooterStep(BaseModel):
+    """页眉页脚设置步骤。用户不说则无，说得模糊则用默认。odd_even 时奇偶页可分别指定。"""
+
+    type: Literal["header_footer"] = "header_footer"
+    header_text: Optional[str] = Field(None, description="页眉文字（odd_even 时作为奇数页默认）")
+    footer_text: Optional[str] = Field(None, description="页脚文字（odd_even 时作为奇数页默认）")
+    odd_even: bool = Field(False, description="奇偶页不同")
+    odd_header_text: Optional[str] = Field(None, description="奇数页页眉，odd_even 时优先于 header_text")
+    even_header_text: Optional[str] = Field(None, description="偶数页页眉，odd_even 时使用")
+    odd_footer_text: Optional[str] = Field(None, description="奇数页页脚，odd_even 时优先于 footer_text")
+    even_footer_text: Optional[str] = Field(None, description="偶数页页脚，odd_even 时使用")
+    show_chapter: bool = Field(False, description="显示当前章节（标题）")
+    odd_show_chapter: Optional[bool] = Field(None, description="奇数页显示章节，odd_even 时优先")
+    even_show_chapter: Optional[bool] = Field(None, description="偶数页显示章节，odd_even 时使用")
+    underline: bool = Field(False, description="页眉/页脚下划线")
+    odd_underline: Optional[bool] = Field(None, description="奇数页下划线，odd_even 时优先")
+    even_underline: Optional[bool] = Field(None, description="偶数页下划线，odd_even 时使用")
+    page_number: bool = Field(False, description="添加页码")
+    odd_page_number: Optional[bool] = Field(None, description="奇数页页码，odd_even 时优先")
+    even_page_number: Optional[bool] = Field(None, description="偶数页页码，odd_even 时使用")
+    first_page_different: bool = Field(False, description="首页页眉页脚不同")
+
+
+class UpdateFieldsStep(BaseModel):
+    """更新域步骤"""
+
+    type: Literal["update_fields"] = "update_fields"
+
+
+class CollapseEmptyLinesStep(BaseModel):
+    """将 x 个连续空行改成 y 个空行"""
+
+    type: Literal["collapse_empty_lines"] = "collapse_empty_lines"
+    from_count: int = Field(..., ge=2, description="连续空行数量 x（>=2）")
+    to_count: int = Field(..., ge=0, description="目标空行数量 y（>=0）")
+
+
+WorkflowStep = Annotated[
+    Union[
+        HeadingChangeStep,
+        ApplyListStep,
+        ReTypesetStep,
+        PageMarginsStep,
+        HeaderFooterStep,
+        UpdateFieldsStep,
+        CollapseEmptyLinesStep,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class Workflow(BaseModel):
+    """Z Mode 工作流"""
+
+    mode: Literal["z"] = "z"
+    steps: List[WorkflowStep] = Field(
+        default_factory=list,
+        description="工作流步骤列表，按序执行",
+    )
 
 
 # ---------------------------------------------------------------------------
