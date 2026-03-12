@@ -3,12 +3,12 @@
 
 提供 process_document 作为主入口函数，完成：解析用户意图 → 调度排版引擎 → 保存文档。
 支持 Y Mode（单次再排版）和 Z Mode（多步骤工作流）。
+Z Mode 支持执行前确认：展示工作流，用户可确认执行或补充修改后重新解析。
 """
 
 import logging
-import re
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -17,30 +17,31 @@ load_dotenv()  # 加载 .env 中的 OPENAI_API_KEY 等配置
 logger = logging.getLogger(__name__)
 
 from .dispatcher.command import CommandDispatcher
-from .dispatcher.workflow import WorkflowDispatcher
+from .dispatcher.workflow import WorkflowDispatcher, format_workflow_for_display
 from .formatter.engine import WordProcessor
+from .intent.mode_detector import detect_mode
 from .intent.parser import IntentParser
 from .intent.workflow_parser import WorkflowParser
+from .schemas.typesetting import Workflow
 
 
-def _detect_z_mode(user_prompt: str) -> bool:
+def _z_confirm_stdin(workflow: Workflow, full_prompt: str) -> Tuple[bool, Optional[str]]:
     """
-    根据用户指令自动判断是否使用 Z Mode（多步骤工作流）
-
-    触发条件：包含编号（1. 2. 3.）、分号分隔多句、或显式「步骤」等。
+    从 stdin 获取用户确认。返回 (是否确认, 补充修改内容或 None)。
     """
-    if not user_prompt or not user_prompt.strip():
-        return False
-    text = user_prompt.strip()
-    if re.search(r"[1-9][\.\．]\s*\S", text):
-        return True
-    if "；" in text or ";" in text:
-        parts = re.split(r"[；;]", text)
-        if len(parts) >= 2:
-            return True
-    if "步骤" in text or "工作流" in text:
-        return True
-    return False
+    print()
+    print(format_workflow_for_display(workflow))
+    print()
+    try:
+        inp = input("确认执行? (y/确认=执行, 直接输入=补充修改后重新解析): ").strip()
+    except EOFError:
+        return False, None
+    if not inp:
+        return False, None
+    lower = inp.lower()
+    if lower in ("y", "yes", "确认", "执行"):
+        return True, None
+    return False, inp
 
 
 def process_document(
@@ -50,6 +51,8 @@ def process_document(
     output_path: Optional[str] = None,
     llm_connector=None,
     mode: Literal["y", "z", "auto"] = "auto",
+    z_interactive: bool = False,
+    z_confirm_callback: Optional[Callable[[Workflow, str], Tuple[bool, Optional[str]]]] = None,
 ) -> str:
     """
     主入口：解析用户意图 → 调度排版引擎 → 保存文档
@@ -62,6 +65,9 @@ def process_document(
         output_path: 输出文件路径，若为 None 则覆盖原文件
         llm_connector: LLM 连接器实例，若为 None 则使用 OpenAIConnector（从 .env 读取 API Key）
         mode: 工作模式。y=单次再排版，z=多步骤工作流，auto=根据指令自动判断
+        z_interactive: Z Mode 时是否从 stdin 交互确认（展示工作流，可补充修改）
+        z_confirm_callback: Z Mode 确认回调 (workflow, full_prompt) -> (confirmed, refinement)
+            返回 (True, None) 执行，(False, "补充内容") 重新解析
 
     Returns:
         处理后的文件路径
@@ -81,15 +87,34 @@ def process_document(
     word_processor = WordProcessor.from_path(str(path))
     logger.info("文档加载成功，共 %d 个段落", len(word_processor.document.paragraphs))
 
-    # 2. 模式判断与执行
-    use_z_mode = mode == "z" or (mode == "auto" and _detect_z_mode(user_prompt))
+    # 2. 模式判断与执行（auto 时由 LLM 直接判断）
+    use_z_mode = mode == "z" or (
+        mode == "auto" and detect_mode(user_prompt, llm_connector) == "z"
+    )
     prompt_preview = user_prompt[:50] + "..." if len(user_prompt) > 50 else user_prompt
     logger.info("模式=%s，使用 Z Mode=%s，指令=%s", mode, use_z_mode, prompt_preview)
 
     if use_z_mode:
         workflow_parser = WorkflowParser(llm_connector=llm_connector)
-        workflow = workflow_parser.parse(user_prompt)
-        logger.info("工作流解析完成，共 %d 步", len(workflow.steps))
+        confirm_fn = z_confirm_callback or (_z_confirm_stdin if z_interactive else None)
+
+        full_prompt = user_prompt
+        while True:
+            workflow = workflow_parser.parse(full_prompt)
+            logger.info("工作流解析完成，共 %d 步", len(workflow.steps))
+
+            if confirm_fn is None:
+                break
+
+            confirmed, refinement = confirm_fn(workflow, full_prompt)
+            if confirmed:
+                break
+            if refinement is None or not refinement.strip():
+                logger.info("用户取消确认，退出")
+                raise KeyboardInterrupt("用户取消")
+            full_prompt = f"{full_prompt}\n\n用户补充：{refinement.strip()}"
+            logger.info("用户补充修改，重新解析工作流")
+
         WorkflowDispatcher.execute(
             workflow=workflow,
             word_processor=word_processor,
@@ -176,6 +201,11 @@ if __name__ == "__main__":
         default=None,
         help="输出文件路径，默认覆盖原文件",
     )
+    parser.add_argument(
+        "--no-confirm",
+        action="store_true",
+        help="Z Mode 时跳过确认，直接执行（用于脚本）",
+    )
     args = parser.parse_args()
 
     doc_path = args.docx
@@ -186,11 +216,16 @@ if __name__ == "__main__":
         print(f"已创建示例文档: {doc_path}")
 
     output_path = args.output or doc_path
-    result = process_document(
-        doc_path,
-        prompt,
-        preset=args.preset,
-        output_path=output_path,
-        mode=args.mode,
-    )
-    print(f"处理完成，已保存至: {result}")
+    try:
+        result = process_document(
+            doc_path,
+            prompt,
+            preset=args.preset,
+            output_path=output_path,
+            mode=args.mode,
+            z_interactive=not args.no_confirm,
+        )
+        print(f"处理完成，已保存至: {result}")
+    except KeyboardInterrupt:
+        print("\n已取消")
+        sys.exit(130)

@@ -442,28 +442,145 @@ class WordProcessor:
         """
         为匹配的段落应用多级列表编号
 
-        MVP：仅支持 target_scope: heading，对 Heading 1~9 按层级设置 ilvl（0~8）。
-        使用文档中已有的 numbering 定义（numId=1）。
+        支持 list_style：decimal(1,2,3)、decimal_hierarchical(1,1.1,1.1.1)、
+        chinese_mixed(一（一）1（1）)、bullet、multilevel。
 
         Args:
-            target_scope: 作用范围，heading 表示仅标题
-            list_style: 列表样式（multilevel/decimal/bullet），当前均使用多级编号
+            target_scope: 作用范围，heading、body、all
+            list_style: 列表样式，由用户自然语言映射
 
         Returns:
             应用的段落数量
         """
+        num_id = self._get_or_create_numbering(list_style)
         if target_scope == "heading":
-            return self._apply_list_to_headings()
+            self._remove_num_pr_from_body()
+            return self._apply_list_to_headings(num_id)
         if target_scope == "body":
-            return self._apply_list_to_body()
+            return self._apply_list_to_body(num_id)
         if target_scope == "all":
-            return self._apply_list_to_headings() + self._apply_list_to_body()
+            return self._apply_list_to_headings(num_id) + self._apply_list_to_body(num_id)
         logger.warning("apply_multilevel_list: 不支持的 target_scope %s", target_scope)
         return 0
 
-    def _apply_list_to_headings(self) -> int:
+    def _get_or_create_numbering(self, list_style: str) -> int:
+        """
+        根据 list_style 获取或创建 numbering，返回 numId。
+        multilevel 使用文档已有 numId=1；其他样式创建自定义 abstractNum。
+        """
+        if list_style in ("multilevel", ""):
+            return 1
+        cache_key = f"_num_id_{list_style}"
+        if hasattr(self, cache_key):
+            return getattr(self, cache_key)
+        num_id = self._create_custom_numbering(list_style)
+        setattr(self, cache_key, num_id)
+        return num_id
+
+    def _create_custom_numbering(self, list_style: str) -> int:
+        """创建自定义多级编号定义，返回 numId"""
+        numbering = self._doc.part.numbering_part.element
+        abstract_ids = []
+        num_ids = []
+        for e in numbering:
+            tag_local = e.tag.split("}")[-1] if "}" in e.tag else e.tag
+            if tag_local == "abstractNum":
+                aid = e.get(qn("w:abstractNumId"))
+                if aid is not None:
+                    try:
+                        abstract_ids.append(int(aid))
+                    except ValueError:
+                        pass
+            elif tag_local == "num":
+                nid = e.get(qn("w:numId"))
+                if nid is not None:
+                    try:
+                        num_ids.append(int(nid))
+                    except ValueError:
+                        pass
+        next_abstract = max(abstract_ids, default=-1) + 1
+        next_num = max(num_ids, default=0) + 1
+
+        levels = self._get_numbering_levels(list_style)
+        abstract = self._build_abstract_num(next_abstract, levels)
+        numbering.insert(0, abstract)
+        num_elem = OxmlElement("w:num")
+        num_elem.set(qn("w:numId"), str(next_num))
+        abstract_ref = OxmlElement("w:abstractNumId")
+        abstract_ref.set(qn("w:val"), str(next_abstract))
+        num_elem.append(abstract_ref)
+        numbering.append(num_elem)
+        logger.info("创建自定义编号 list_style=%s, numId=%s", list_style, next_num)
+        return next_num
+
+    def _get_numbering_levels(self, list_style: str) -> list[tuple[int, str, str]]:
+        """返回 (ilvl, lvlText, numFmt) 列表"""
+        if list_style == "decimal":
+            return [(i, "%1.", "decimal") for i in range(9)]
+        if list_style == "decimal_hierarchical":
+            return [
+                (0, "%1.", "decimal"),
+                (1, "%1.%2.", "decimal"),
+                (2, "%1.%2.%3.", "decimal"),
+                (3, "%1.%2.%3.%4.", "decimal"),
+                (4, "%1.%2.%3.%4.%5.", "decimal"),
+                (5, "%1.%2.%3.%4.%5.%6.", "decimal"),
+                (6, "%1.%2.%3.%4.%5.%6.%7.", "decimal"),
+                (7, "%1.%2.%3.%4.%5.%6.%7.%8.", "decimal"),
+                (8, "%1.%2.%3.%4.%5.%6.%7.%8.%9.", "decimal"),
+            ]
+        if list_style == "chinese_mixed":
+            return [
+                (0, "%1、", "chineseCounting"),
+                (1, "（%1）", "chineseCounting"),
+                (2, "%1.", "decimal"),
+                (3, "（%1）", "decimal"),
+                (4, "%1.", "decimal"),
+                (5, "%1.", "decimal"),
+                (6, "%1.", "decimal"),
+                (7, "%1.", "decimal"),
+                (8, "%1.", "decimal"),
+            ]
+        if list_style == "bullet":
+            bullet_char = "\u2022"
+            return [(i, bullet_char, "bullet") for i in range(9)]
+        logger.warning("未知 list_style %s，使用 decimal", list_style)
+        return [(i, "%1.", "decimal") for i in range(9)]
+
+    def _build_abstract_num(self, abstract_num_id: int, levels: list[tuple[int, str, str]]) -> "OxmlElement":
+        """构建 w:abstractNum 元素"""
+        abstract = OxmlElement("w:abstractNum")
+        abstract.set(qn("w:abstractNumId"), str(abstract_num_id))
+        mlt = OxmlElement("w:multiLevelType")
+        mlt.set(qn("w:val"), "multilevel")
+        abstract.append(mlt)
+        for ilvl, lvl_text, num_fmt in levels:
+            lvl = OxmlElement("w:lvl")
+            lvl.set(qn("w:ilvl"), str(ilvl))
+            start = OxmlElement("w:start")
+            start.set(qn("w:val"), "1")
+            lvl.append(start)
+            nf = OxmlElement("w:numFmt")
+            nf.set(qn("w:val"), num_fmt)
+            lvl.append(nf)
+            lt = OxmlElement("w:lvlText")
+            lt.set(qn("w:val"), lvl_text)
+            lvl.append(lt)
+            lvl_jc = OxmlElement("w:lvlJc")
+            lvl_jc.set(qn("w:val"), "left")
+            lvl.append(lvl_jc)
+            pos = 720 + ilvl * 360
+            p_pr = OxmlElement("w:pPr")
+            ind = OxmlElement("w:ind")
+            ind.set(qn("w:left"), str(pos))
+            ind.set(qn("w:hanging"), "360")
+            p_pr.append(ind)
+            lvl.append(p_pr)
+            abstract.append(lvl)
+        return abstract
+
+    def _apply_list_to_headings(self, num_id: int) -> int:
         """为标题段落应用多级列表编号"""
-        num_id = 1
         count = 0
         for para in self._doc.paragraphs:
             if not self._is_heading(para):
@@ -477,9 +594,8 @@ class WordProcessor:
         logger.info("apply_multilevel_list: 标题范围，共应用 %d 个段落", count)
         return count
 
-    def _apply_list_to_body(self) -> int:
+    def _apply_list_to_body(self, num_id: int) -> int:
         """为正文段落应用多级列表编号（ilvl=0）"""
-        num_id = 1
         count = 0
         for para in self._doc.paragraphs:
             if not self._match_scope(para, "body"):
@@ -503,6 +619,97 @@ class WordProcessor:
         num_pr.append(ilvl_elem)
         num_pr.append(num_id_elem)
         p_pr.append(num_pr)
+
+    def _remove_num_pr_from_body(self) -> None:
+        """
+        确保正文段落不参与列表编号。
+        Word 会延续列表到后续段落，需显式设置 numId 指向「无编号」定义以中断列表。
+        """
+        num_id = self._get_or_create_no_numbering_id()
+        count = 0
+        for para in self._doc.paragraphs:
+            if not self._match_scope(para, "body"):
+                continue
+            p_pr = para._p.get_or_add_pPr()
+            old_num_pr = p_pr.find(qn("w:numPr"))
+            if old_num_pr is not None:
+                p_pr.remove(old_num_pr)
+            num_pr = OxmlElement("w:numPr")
+            ilvl_elem = OxmlElement("w:ilvl")
+            ilvl_elem.set(qn("w:val"), "0")
+            num_id_elem = OxmlElement("w:numId")
+            num_id_elem.set(qn("w:val"), str(num_id))
+            num_pr.append(ilvl_elem)
+            num_pr.append(num_id_elem)
+            p_pr.append(num_pr)
+            count += 1
+        if count > 0:
+            logger.info("已为 %d 个正文段落设置无编号以中断列表", count)
+
+    def _get_or_create_no_numbering_id(self) -> int:
+        """获取或创建「无编号」定义（lvlText 为空），返回 numId"""
+        cache_key = "_num_id_no_numbering"
+        if hasattr(self, cache_key):
+            return getattr(self, cache_key)
+        numbering = self._doc.part.numbering_part.element
+        abstract_ids = []
+        num_ids = []
+        for e in numbering:
+            tag_local = e.tag.split("}")[-1] if "}" in e.tag else e.tag
+            if tag_local == "abstractNum":
+                aid = e.get(qn("w:abstractNumId"))
+                if aid is not None:
+                    try:
+                        abstract_ids.append(int(aid))
+                    except ValueError:
+                        pass
+            elif tag_local == "num":
+                nid = e.get(qn("w:numId"))
+                if nid is not None:
+                    try:
+                        num_ids.append(int(nid))
+                    except ValueError:
+                        pass
+        next_abstract = max(abstract_ids, default=-1) + 1
+        next_num = max(num_ids, default=0) + 1
+
+        abstract = OxmlElement("w:abstractNum")
+        abstract.set(qn("w:abstractNumId"), str(next_abstract))
+        mlt = OxmlElement("w:multiLevelType")
+        mlt.set(qn("w:val"), "singleLevel")
+        abstract.append(mlt)
+        lvl = OxmlElement("w:lvl")
+        lvl.set(qn("w:ilvl"), "0")
+        start = OxmlElement("w:start")
+        start.set(qn("w:val"), "1")
+        lvl.append(start)
+        nf = OxmlElement("w:numFmt")
+        nf.set(qn("w:val"), "bullet")
+        lvl.append(nf)
+        lt = OxmlElement("w:lvlText")
+        lt.set(qn("w:val"), "")
+        lvl.append(lt)
+        lvl_jc = OxmlElement("w:lvlJc")
+        lvl_jc.set(qn("w:val"), "left")
+        lvl.append(lvl_jc)
+        p_pr = OxmlElement("w:pPr")
+        ind = OxmlElement("w:ind")
+        ind.set(qn("w:left"), "0")
+        ind.set(qn("w:hanging"), "0")
+        p_pr.append(ind)
+        lvl.append(p_pr)
+        abstract.append(lvl)
+
+        numbering.insert(0, abstract)
+        num_elem = OxmlElement("w:num")
+        num_elem.set(qn("w:numId"), str(next_num))
+        abstract_ref = OxmlElement("w:abstractNumId")
+        abstract_ref.set(qn("w:val"), str(next_abstract))
+        num_elem.append(abstract_ref)
+        numbering.append(num_elem)
+        setattr(self, cache_key, next_num)
+        logger.debug("创建无编号定义 numId=%s", next_num)
+        return next_num
 
     def set_page_margins(
         self,

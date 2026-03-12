@@ -130,17 +130,32 @@ class HeadingChangeStep(BaseModel):
     to_scope: str = Field(..., description="目标 scope，如 heading_1")
 
 
+# 多级列表样式：用户自然语言可映射到以下值
+# decimal: 1, 2, 3
+# decimal_hierarchical: 1, 1.1, 1.1.1
+# chinese_mixed: 一、（一）、1、（1）
+# bullet: 项目符号
+# multilevel: 默认多级
+LIST_STYLE_VALUES = (
+    "decimal",
+    "decimal_hierarchical",
+    "chinese_mixed",
+    "bullet",
+    "multilevel",
+)
+
+
 class ApplyListStep(BaseModel):
     """应用列表步骤"""
 
     type: Literal["apply_list"] = "apply_list"
     target_scope: str = Field(
-        ...,
-        description="作用范围：heading、body、all",
+        default="heading",
+        description="作用范围：heading（仅标题，默认）、body（仅正文）、all（全文）",
     )
     list_style: str = Field(
-        ...,
-        description="列表样式：multilevel、decimal、bullet",
+        "multilevel",
+        description="列表样式：decimal(1,2,3)、decimal_hierarchical(1,1.1,1.1.1)、chinese_mixed(一（一）1（1）)、bullet、multilevel",
     )
 
 
